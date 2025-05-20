@@ -15,8 +15,7 @@ import { useContextMenu } from '@/composables/useContextMenu'
 import { useMessageToaster } from '@/composables/useMessageToaster'
 import { playbackService } from '@/services/playbackService'
 import { queueStore } from '@/stores/queueStore'
-import type { ResolvableData } from '@/services/mediaBrowser'
-import { mediaBrowser } from '@/services/mediaBrowser'
+import { songStore } from '@/stores/songStore'
 import { pluralize } from '@/utils/formatters'
 
 const { base, ContextMenu, open, trigger } = useContextMenu()
@@ -29,8 +28,8 @@ const isForSingleFolder = computed(() => {
   return items.value?.length === 1 && items.value[0].type === 'folders'
 })
 
-const idsAndFolderPaths = computed(() => {
-  return items.value?.map<ResolvableData>(item => {
+const references = computed(() => {
+  return items.value?.map<MediaReference>(item => {
     if (item.type === 'folders') {
       return { type: 'folders', path: item.path }
     } else {
@@ -42,7 +41,7 @@ const idsAndFolderPaths = computed(() => {
 const openFolder = () => trigger(async () => go(url('media-browser', { path: (items.value![0] as Folder).path })))
 
 const play = () => trigger(async () => {
-  const songs = await mediaBrowser.resolveSongsFromIdsAndFolderPaths(idsAndFolderPaths.value!)
+  const songs = await songStore.resolveFromMediaReferences(references.value!)
 
   if (songs.length) {
     playbackService.queueAndPlay(songs)
@@ -53,10 +52,10 @@ const play = () => trigger(async () => {
 })
 
 const shuffle = () => trigger(async () => {
-  const songs = await mediaBrowser.resolveSongsFromIdsAndFolderPaths(idsAndFolderPaths.value!, true)
+  const songs = await songStore.resolveFromMediaReferences(references.value!, true)
 
   if (songs.length) {
-    // folder shuffling has already been done server-side, but local songs shuffling still needs to be done
+    // folder shuffling has already been done server-side, but local songs shuffling is still needed.
     playbackService.queueAndPlay(songs, true)
     go(url('queue'))
   } else {
@@ -65,13 +64,13 @@ const shuffle = () => trigger(async () => {
 })
 
 const addToQueue = () => trigger(async () => {
-  const songs = await mediaBrowser.resolveSongsFromIdsAndFolderPaths(idsAndFolderPaths.value!)
+  const songs = await songStore.resolveFromMediaReferences(references.value!)
 
   if (songs.length) {
     queueStore.queueAfterCurrent(songs)
     toastSuccess(`${pluralize(songs, 'song')} added to queue.`)
   } else {
-    toastWarning('The folder is empty.')
+    toastWarning('Nothing to queue.')
   }
 })
 

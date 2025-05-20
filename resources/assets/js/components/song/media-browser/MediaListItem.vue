@@ -31,11 +31,7 @@ const playing = computed(
   () => isSong(item.value) && ['Playing', 'Paused'].includes(item.value.playback_state!),
 )
 
-const label = computed(() => {
-  return isSong(item.value)
-    ? `${item.value.artist_name} - ${item.value.album_name} - ${item.value.title}`
-    : item.value.name
-})
+const label = computed(() => isSong(item.value) ? item.value.basename : item.value.name)
 </script>
 
 <style scoped lang="postcss">

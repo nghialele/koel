@@ -7,9 +7,9 @@
     :items="rows"
     @scrolled-to-end="$emit('scrolledToEnd')"
     @keydown.enter.prevent.stop="handleEnter"
-    @keydown.a.prevent="handleA"
+    @keydown.a.prevent="selectAllWithKeyboard"
   >
-    <MediaBrowserItem
+    <MediaListItem
       :key="row.item.id"
       :class="{ selected: row.selected }"
       :item="row.item"
@@ -32,17 +32,22 @@ import { useListSelection } from '@/composables/useListSelection'
 import { isSong } from '@/utils/typeGuards'
 
 import VirtualScroller from '@/components/ui/VirtualScroller.vue'
-import MediaBrowserItem from '@/components/song/media-browser/MediaBrowserItem.vue'
+import MediaListItem from '@/components/song/media-browser/MediaListItem.vue'
 import isMobile from 'ismobilejs'
+import { queueStore } from '@/stores/queueStore'
+import { mediaBrowser } from '@/services/mediaBrowser'
+import { preferenceStore } from '@/stores/preferenceStore'
+import { unionBy } from 'lodash'
+import { songStore } from '@/stores/songStore'
 
-const props = defineProps<{ items: (Folder | Song)[] }>()
+const props = defineProps<{ items: (Folder | Song)[], path: string }>()
 
 defineEmits<{
   (e: 'press:enter', event: KeyboardEvent): void
   (e: 'scrolledToEnd'): void
 }>()
 
-const { items } = toRefs(props)
+const { items, path } = toRefs(props)
 
 const { go, url } = useRouter()
 const { startDragging } = useDraggable('browser-media')
@@ -58,7 +63,7 @@ const rows = computed(() => {
 
 const {
   select,
-  selectAll,
+  selectAllWithKeyboard,
   selectBetween,
   clearSelection,
   toggleSelected,
@@ -70,12 +75,35 @@ const {
 
 watch(items, () => reapplySelection(), { deep: true })
 
-const handleEnter = () => {
-}
-
-const handleA = (event: KeyboardEvent) => (event.ctrlKey || event.metaKey) && selectAll()
 const selectedItems = computed(() => selected.value.map(row => row.item))
 const onlySongsSelected = computed(() => selectedItems.value.every(isSong))
+const singleFolderSelected = computed(() => selectedItems.value.length === 1 && !isSong(selectedItems.value[0]))
+
+const handleEnter = async (event: KeyboardEvent) => {
+  // if it's a simple Enter key press on a folder, open it
+  if (singleFolderSelected.value && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+    const folder = selectedItems.value[0] as Folder
+    go(url('media-browser', { path: folder.path }))
+
+    return
+  }
+
+  const resolvedSongs = onlySongsSelected.value
+    ? selectedItems.value as Song[]
+    : await songStore.resolveFromMediaReferences(mediaBrowser.extractMediaReferences(selectedItems.value))
+
+  //  • Only Enter: Queue to bottom
+  //  • Shift+Enter: Queues to top
+  //  • Cmd/Ctrl+Enter: Queues to bottom and play the first selected item
+  //  • Cmd/Ctrl+Shift+Enter: Queue to top and play the first queued item
+  event.shiftKey ? queueStore.queueToTop(resolvedSongs) : queueStore.queue(resolvedSongs)
+
+  if (event.ctrlKey || event.metaKey) {
+    await playbackService.play(resolvedSongs[0])
+  }
+
+  go('queue')
+}
 
 const onDragStart = async (row: MediaRow, event: DragEvent) => {
   // If the user is dragging an unselected row, clear the current selection.
@@ -111,9 +139,17 @@ const onClick = (row: MediaRow, event: MouseEvent) => {
   }
 }
 
-const onDblclick = (row: MediaRow) => {
+const onDblclick = async (row: MediaRow) => {
   if (isSong(row.item)) {
-    playbackService.queueAndPlay(row.item)
+    // If the user double-clicks a song, play it, but with consideration to the continuous playback preference.
+    if (preferenceStore.state.continuous_playback) {
+      const songsUnderPath = await songStore.fetchInFolder(path.value)
+      // make sure the clicked song is in the list
+      queueStore.replaceQueueWith(unionBy(songsUnderPath, [row.item], 'id'))
+      playbackService.play(row.item)
+    } else {
+      playbackService.queueAndPlay(row.item)
+    }
   } else {
     go(url('media-browser', { path: row.item.path }))
   }

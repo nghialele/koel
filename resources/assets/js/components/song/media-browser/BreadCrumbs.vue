@@ -1,8 +1,8 @@
 <template>
-  <ul class="text-base">
-    <li v-for="path in paths" :key="path.path" class="inline-block">
-      <a :href="url('media-browser', { path: path.path })" class="text-k-text-secondary font-normal">
-        {{ path.name }}
+  <ul class="text-base" :class="disabled && 'disabled'">
+    <li v-for="p in paths" :key="p.path" class="inline-block">
+      <a :href="url('media-browser', { path: p.path })" class="text-k-text-secondary font-normal">
+        {{ p.name }}
       </a>
     </li>
   </ul>
@@ -13,7 +13,10 @@ import { useRouter } from '@/composables/useRouter'
 import { computed, toRefs } from 'vue'
 import { mediaBrowser } from '@/services/mediaBrowser'
 
-const props = defineProps<{ path: string }>()
+const props = withDefaults(defineProps<{ path: string, disabled?: boolean }>(), {
+  disabled: false,
+})
+
 const { path } = toRefs(props)
 
 const { url } = useRouter()
@@ -22,6 +25,10 @@ const paths = computed(() => mediaBrowser.getBreadcrumbs(path.value))
 </script>
 
 <style scoped lang="postcss">
+.disabled {
+  @apply opacity-50 cursor-not-allowed pointer-events-none;
+}
+
 li:not(:first-of-type)::before {
   content: '/';
   @apply font-normal opacity-50 inline-block mx-1.5;
